@@ -1,0 +1,15 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+.nav-button {
+  @apply flex items-center justify-center w-1/2 h-full border-orange-400 hover:bg-orange-300
+}
+
+.map-button {
+  @apply h-full rounded-3xl py-2 px-4 shadow-lg border bg-white hover:bg-slate-100
+}
+
+.leaflet-control-zoom {
+  top: 60px !important;
+}
