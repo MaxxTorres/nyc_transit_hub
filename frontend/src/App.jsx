@@ -1,5 +1,6 @@
-import {Routes, Route, useNavigate} from 'react-router-dom'
-import React, { useEffect, useState } from "react";
+import {Routes, Route, useNavigate,} from 'react-router-dom'
+import React, { useEffect, useState,  useContext } from "react";
+import { StationsContext } from './context/StationsContext'
 import HomePage from './pages/HomePage'
 import AuthPage from './pages/AuthPage'
 import StationsPage from './pages/StationsPage'
@@ -9,6 +10,7 @@ import { onAuthStateChanged, signOut } from "firebase/auth";
 import { getIdToken } from "firebase/auth";
 
 function App() {
+  const {setUser} = useContext(StationsContext)
   const [currentUser, setCurrentUser] = useState(null); // Stores logged-in user object or null
   const [authLoading, setAuthLoading] = useState(true); // Tracks if Firebase is still checking auth state
   const navigate = useNavigate();
@@ -19,6 +21,7 @@ function App() {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       console.log("Auth state changed. User:", user ? user.uid : null);
       setCurrentUser(user);
+      setUser(user)
       setAuthLoading(false);
     });
 
@@ -50,6 +53,7 @@ function App() {
   }
 
   return (
+    
     <div style = {{'marginTop': '56px'}}>
       <Routes>
         <Route path="/" element={<AuthPage />} />
@@ -57,6 +61,7 @@ function App() {
         <Route path="stations" element={<StationsPage handleLogout={handleLogout}/>} />
       </Routes>
     </div>
+
   );
 }
 

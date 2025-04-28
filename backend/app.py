@@ -18,7 +18,7 @@ load_dotenv()
 app = Flask(__name__)
 
 # --- Explicit CORS Configuration ---
-CORS(app, resources={
+CORS(app, supports_credentials=True, resources={
     # Apply CORS to all routes starting with /api/
     r"/api/*": {
         # Allow requests only from your frontend origin
@@ -44,21 +44,10 @@ class User(db.Model):
     """Represents a user in the local database, linked to Firebase Auth."""
     id = db.Column(db.Integer, primary_key=True) # Local primary key
     firebase_uid = db.Column(db.String(128), unique=True, nullable=False) # Firebase unique ID
-    favorite_routes = db.relationship('FavoriteRoute', backref='user', lazy=True, cascade="all, delete-orphan")
     favorite_stations = db.relationship('FavoriteStation', backref='user', lazy=True, cascade="all, delete-orphan")
 
     def __repr__(self):
         return f'<User {self.firebase_uid}>'
-
-class FavoriteRoute(db.Model):
-    """Represents a user's favorited route."""
-    id = db.Column(db.Integer, primary_key=True)
-    # Foreign key linking to the User table's primary key (user.id)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    route_id = db.Column(db.String(10), nullable=False) # e.g., '1', 'A', 'L', 'SIR'
-
-    def __repr__(self):
-        return f'<FavoriteRoute {self.route_id} for User {self.user_id}>'
 
 class FavoriteStation(db.Model):
     """Represents a user's favorited station."""
@@ -99,71 +88,59 @@ def token_required(f):
     """Decorator to verify Firebase ID token in Authorization header."""
     @wraps(f)
     def decorated_function(*args, **kwargs):
+        if request.method == 'OPTIONS':
+            response = jsonify({'message': 'CORS Preflight OK'})
+            response.status_code = 200
+            return response
+
         token = None
-        # Skip token verification logic for OPTIONS preflight requests
-        if request.method != 'OPTIONS':
-            # Ensure Firebase Admin SDK was initialized before proceeding
-            if not firebase_app_initialized:
-                 print("Error: Firebase Admin SDK not initialized, cannot verify token.")
-                 return jsonify({"message": "Firebase Admin SDK not initialized on server!"}), 500
 
-            auth_header = request.headers.get('Authorization')
-            if auth_header and auth_header.startswith('Bearer '):
-                token = auth_header.split('Bearer ')[1]
+        if not firebase_app_initialized:
+            print("Error: Firebase Admin SDK not initialized, cannot verify token.")
+            return jsonify({"message": "Firebase Admin SDK not initialized on server!"}), 500
 
-            if not token:
-                print("Token verification failed: Token missing")
-                return jsonify({"message": "Authentication Token is missing!"}), 401 # Unauthorized
+        auth_header = request.headers.get('Authorization')
+        if auth_header and auth_header.startswith('Bearer '):
+            token = auth_header.split('Bearer ')[1]
 
-            try:
-                # Verify the token using Firebase Admin SDK
-                decoded_token = auth.verify_id_token(token)
-                # Store user's Firebase UID in Flask's global context 'g' for this request
-                g.current_user_uid = decoded_token['uid']
-                print(f"Token verified for UID: {g.current_user_uid}") # Server log
+        if not token:
+            print("Token verification failed: Token missing")
+            return jsonify({"message": "Authentication Token is missing!"}), 401
 
-                # Optional: Check/create user in local DB
-                # Use app_context for database operations within decorator if needed
-                with app.app_context():
-                    user = User.query.filter_by(firebase_uid=g.current_user_uid).first()
-                    if not user:
-                         print(f"First time seeing user {g.current_user_uid}, adding to local DB.")
-                         new_user = User(firebase_uid=g.current_user_uid)
-                         db.session.add(new_user)
-                         db.session.commit()
-                         g.user_db_id = new_user.id # Store new user's local DB ID
-                    else:
-                         g.user_db_id = user.id # Store existing user's local DB ID
+        try:
+            decoded_token = auth.verify_id_token(token)
+            g.current_user_uid = decoded_token['uid']
+            print(f"Token verified for UID: {g.current_user_uid}")
 
-            except auth.ExpiredIdTokenError:
-                 print("Token verification failed: Expired")
-                 return jsonify({"message": "Token has expired!"}), 401 # Unauthorized
-            except auth.InvalidIdTokenError as e:
-                 print(f"Token verification failed: Invalid ({e})")
-                 return jsonify({"message": "Token is invalid!"}), 401 # Unauthorized
-            except Exception as e:
-                # Catch any other unexpected errors during verification
-                print(f"Token verification failed: Unexpected error - {e}")
-                return jsonify({"message": "Token verification failed!"}), 500 # Internal Server Error
+            user = User.query.filter_by(firebase_uid=g.current_user_uid).first()
+            if not user:
+                print(f"First time seeing user {g.current_user_uid}, adding to local DB.")
+                new_user = User(firebase_uid=g.current_user_uid)
+                db.session.add(new_user)
+                db.session.commit()
+                g.user_db_id = new_user.id
+            else:
+                g.user_db_id = user.id
 
-        # Call the actual route function (for both OPTIONS and verified requests)
-        # Flask-CORS should handle adding headers to the OPTIONS response path
+        except auth.ExpiredIdTokenError:
+            print("Token verification failed: Expired")
+            return jsonify({"message": "Token has expired!"}), 401
+        except auth.InvalidIdTokenError as e:
+            print(f"Token verification failed: Invalid ({e})")
+            return jsonify({"message": "Token is invalid!"}), 401
+        except Exception as e:
+            print(f"Token verification failed: Unexpected error - {e}")
+            return jsonify({"message": "Token verification failed!"}), 500
+
         return f(*args, **kwargs)
+
     return decorated_function
 # -----------------------------
 
-# --- Basic Routes (Public) ---
-@app.route('/')
-def home():
-    return "Hello from NYC Transit Hub Backend!"
-
-@app.route('/api/test')
-def api_test():
-    return jsonify({"message": "API is working!"})
-# ---------------------------
-
-@app.route('/api/stations', methods=['GET'])
-def get_stations():
+# --- MTA Data API Endpoint (Public) ---
+@app.route('/api/stations/', methods=['GET'])
+@app.route('/api/stations/<feed_id>', methods=['GET'])
+def get_stations(feed_id="1"):
     base_dir = os.path.dirname(__file__)
 
     # Load GTFS data
@@ -185,26 +162,50 @@ def get_stations():
 
     # Group by stop_name to collect all the route_ids for each stop_name
     grouped_by_name = merged.groupby('stop_name').agg(
-        stop_id=('stop_id', 'first'),
+        stop_ids=('stop_id', list),
         stop_lat=('stop_lat', 'first'),
         stop_lon=('stop_lon', 'first'),
         routes=('route_id', 'first')
     ).reset_index()
 
+    subway_updates = mta_api.get_subway_status_updates(feed_id)
+    future_stops = []
+
+    if subway_updates and "trip_updates" in subway_updates:
+        for trip in subway_updates["trip_updates"]:
+            if "future_stops" in trip:
+                for stop in trip["future_stops"]:
+                    future_stops.append(stop)
+
+    stop_eta_map = {}
+    for stop in future_stops:
+        stop_id = stop["stop_id"]
+        eta = stop["time"]
+        if stop_id not in stop_eta_map or eta < stop_eta_map[stop_id]:
+            stop_eta_map[stop_id] = eta  # store the earliest ETA
+
     # Build structured list/dict to send to frontend
     stops_data = []
     for _, row in grouped_by_name.iterrows():
+        stop_ids = row['stop_ids']
+        next_arrival_times = []
+
+        for stop_id in stop_ids:
+            next_arrival_time = stop_eta_map.get(stop_id)  # Get ETA for each stop_id
+            if next_arrival_time:
+                next_arrival_times.append(next_arrival_time)
+
         stops_data.append({
-            'stop_id': row['stop_id'],
+            'stop_id': stop_ids[0],
             'stop_name': row['stop_name'],
             'stop_lat': row['stop_lat'],
             'stop_lon': row['stop_lon'],
-            'routes': row['routes'] if isinstance(row['routes'], list) else []
+            'routes': row['routes'] if isinstance(row['routes'], list) else [],
+            'next_arrival': next_arrival_times
         })
 
     return jsonify(stops_data)
 
-# --- MTA Data API Endpoint (Public) ---
 @app.route('/api/subway/status', methods=['GET'])
 @app.route('/api/subway/status/<feed_id>', methods=['GET'])
 def get_subway_status(feed_id='1'):
@@ -219,10 +220,6 @@ def get_subway_status(feed_id='1'):
 # --- Accessibility API Endpoint (Public) ---
 @app.route('/api/accessibility/outages', methods=['GET'])
 def get_accessibility_outages():
-    """
-    API endpoint to get current elevator/escalator outages.
-    Publicly accessible.
-    """
     outage_data = mta_api.get_elevator_escalator_outages()
     # Handle potential errors returned from the mta_api module
     if isinstance(outage_data, dict) and "error" in outage_data:
@@ -249,99 +246,7 @@ def get_user_profile():
     })
 # -----------------------------
 
-# --- API Endpoints for Favorite Routes (Protected) ---
-
-@app.route('/api/user/favorites/routes', methods=['GET', 'OPTIONS'])
-@token_required # Protect this route
-def get_favorite_routes():
-    """Fetches the favorite route IDs for the authenticated user."""
-    # OPTIONS is handled by the decorator now
-    user_db_id = g.user_db_id # Get local DB ID from decorator context
-    try:
-        # Query the database for FavoriteRoute records matching the user's ID
-        favorite_routes = FavoriteRoute.query.filter_by(user_id=user_db_id).all()
-        # Extract just the route IDs into a list
-        route_ids = [fav.route_id for fav in favorite_routes]
-        print(f"Fetched favorite routes for user {user_db_id}: {route_ids}")
-        return jsonify({"favorite_routes": route_ids}), 200
-    except Exception as e:
-        # Log error and return a generic server error message
-        print(f"Error fetching favorite routes for user {user_db_id}: {e}")
-        return jsonify({"message": "Error fetching favorites"}), 500
-
-@app.route('/api/user/favorites/routes', methods=['POST', 'OPTIONS'])
-@token_required # Protect this route
-def add_favorite_route():
-    """Adds a route to the authenticated user's favorites."""
-    # OPTIONS is handled by the decorator
-    user_db_id = g.user_db_id
-    data = request.get_json() # Get JSON data from request body
-
-    # Basic input validation
-    if not data or 'route_id' not in data:
-        return jsonify({"message": "Missing 'route_id' in request body"}), 400 # Bad Request
-    route_id_to_add = data['route_id']
-    if not isinstance(route_id_to_add, str) or len(route_id_to_add) > 10: # Example validation
-         return jsonify({"message": "Invalid 'route_id' format"}), 400
-
-    try:
-        # Check if the route is already favorited by this user to prevent duplicates
-        existing_fav = FavoriteRoute.query.filter_by(user_id=user_db_id, route_id=route_id_to_add).first()
-        if existing_fav:
-            # Return 409 Conflict if already exists
-            return jsonify({"message": f"Route '{route_id_to_add}' is already a favorite"}), 409
-
-        # Create a new FavoriteRoute record
-        new_fav = FavoriteRoute(user_id=user_db_id, route_id=route_id_to_add)
-        # Add to the database session and commit
-        db.session.add(new_fav)
-        db.session.commit()
-
-        print(f"Added favorite route '{route_id_to_add}' for user {user_db_id}")
-        # Return success message and the created object
-        return jsonify({
-            "message": f"Route '{route_id_to_add}' added to favorites",
-            "favorite": {"id": new_fav.id, "route_id": new_fav.route_id}
-        }), 201 # 201 Created status code
-    except Exception as e:
-        db.session.rollback() # Rollback DB changes if an error occurs
-        print(f"Error adding favorite route '{route_id_to_add}' for user {user_db_id}: {e}")
-        return jsonify({"message": "Error adding favorite"}), 500
-
-@app.route('/api/user/favorites/routes/<string:route_id>', methods=['DELETE', 'OPTIONS'])
-@token_required # Protect this route
-def remove_favorite_route(route_id):
-    """Removes a specific route from the authenticated user's favorites."""
-    # OPTIONS is handled by the decorator
-    user_db_id = g.user_db_id
-    route_id_to_delete = route_id # Get route ID from the URL path parameter
-
-    try:
-        # Find the specific favorite record for this user and route
-        fav_to_delete = FavoriteRoute.query.filter_by(
-            user_id=user_db_id,
-            route_id=route_id_to_delete
-        ).first()
-
-        # If the favorite doesn't exist, return 404 Not Found
-        if not fav_to_delete:
-            return jsonify({"message": f"Favorite route '{route_id_to_delete}' not found"}), 404
-
-        # Delete the record from the database session and commit
-        db.session.delete(fav_to_delete)
-        db.session.commit()
-
-        print(f"Removed favorite route '{route_id_to_delete}' for user {user_db_id}")
-        # Return success message
-        return jsonify({"message": f"Route '{route_id_to_delete}' removed from favorites"}), 200 # 200 OK
-    except Exception as e:
-        db.session.rollback() # Rollback DB changes on error
-        print(f"Error removing favorite route '{route_id_to_delete}' for user {user_db_id}: {e}")
-        return jsonify({"message": "Error removing favorite"}), 500
-# ---------------------------------------
-
 # --- API Endpoints for Favorite Stations (Protected) ---
-
 @app.route('/api/user/favorites/stations', methods=['GET', 'OPTIONS'])
 @token_required # Protect this route
 def get_favorite_stations():
@@ -437,3 +342,107 @@ if __name__ == '__main__':
 
     # Run the Flask development server
     app.run(debug=True)
+
+
+
+# --- NOT USED: API Endpoints for Favorite Routes (Protected) ---
+
+# class FavoriteRoute(db.Model):
+#     """Represents a user's favorited route."""
+#     id = db.Column(db.Integer, primary_key=True)
+#     # Foreign key linking to the User table's primary key (user.id)
+#     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+#     route_id = db.Column(db.String(10), nullable=False) # e.g., '1', 'A', 'L', 'SIR'
+
+#     def __repr__(self):
+#         return f'<FavoriteRoute {self.route_id} for User {self.user_id}>'
+
+# @app.route('/api/user/favorites/routes', methods=['GET', 'OPTIONS'])
+# @token_required # Protect this route
+# def get_favorite_routes():
+#     """Fetches the favorite route IDs for the authenticated user."""
+#     # OPTIONS is handled by the decorator now
+#     user_db_id = g.user_db_id # Get local DB ID from decorator context
+#     try:
+#         # Query the database for FavoriteRoute records matching the user's ID
+#         favorite_routes = FavoriteRoute.query.filter_by(user_id=user_db_id).all()
+#         # Extract just the route IDs into a list
+#         route_ids = [fav.route_id for fav in favorite_routes]
+#         print(f"Fetched favorite routes for user {user_db_id}: {route_ids}")
+#         return jsonify({"favorite_routes": route_ids}), 200
+#     except Exception as e:
+#         # Log error and return a generic server error message
+#         print(f"Error fetching favorite routes for user {user_db_id}: {e}")
+#         return jsonify({"message": "Error fetching favorites"}), 500
+
+# @app.route('/api/user/favorites/routes', methods=['POST', 'OPTIONS'])
+# @token_required # Protect this route
+# def add_favorite_route():
+#     """Adds a route to the authenticated user's favorites."""
+#     # OPTIONS is handled by the decorator
+#     user_db_id = g.user_db_id
+#     data = request.get_json() # Get JSON data from request body
+
+#     # Basic input validation
+#     if not data or 'route_id' not in data:
+#         return jsonify({"message": "Missing 'route_id' in request body"}), 400 # Bad Request
+#     route_id_to_add = data['route_id']
+#     if not isinstance(route_id_to_add, str) or len(route_id_to_add) > 10: # Example validation
+#          return jsonify({"message": "Invalid 'route_id' format"}), 400
+
+#     try:
+#         # Check if the route is already favorited by this user to prevent duplicates
+#         existing_fav = FavoriteRoute.query.filter_by(user_id=user_db_id, route_id=route_id_to_add).first()
+#         if existing_fav:
+#             # Return 409 Conflict if already exists
+#             return jsonify({"message": f"Route '{route_id_to_add}' is already a favorite"}), 409
+
+#         # Create a new FavoriteRoute record
+#         new_fav = FavoriteRoute(user_id=user_db_id, route_id=route_id_to_add)
+#         # Add to the database session and commit
+#         db.session.add(new_fav)
+#         db.session.commit()
+
+#         print(f"Added favorite route '{route_id_to_add}' for user {user_db_id}")
+#         # Return success message and the created object
+#         return jsonify({
+#             "message": f"Route '{route_id_to_add}' added to favorites",
+#             "favorite": {"id": new_fav.id, "route_id": new_fav.route_id}
+#         }), 201 # 201 Created status code
+#     except Exception as e:
+#         db.session.rollback() # Rollback DB changes if an error occurs
+#         print(f"Error adding favorite route '{route_id_to_add}' for user {user_db_id}: {e}")
+#         return jsonify({"message": "Error adding favorite"}), 500
+
+# @app.route('/api/user/favorites/routes/<string:route_id>', methods=['DELETE', 'OPTIONS'])
+# @token_required # Protect this route
+# def remove_favorite_route(route_id):
+#     """Removes a specific route from the authenticated user's favorites."""
+#     # OPTIONS is handled by the decorator
+#     user_db_id = g.user_db_id
+#     route_id_to_delete = route_id # Get route ID from the URL path parameter
+
+#     try:
+#         # Find the specific favorite record for this user and route
+#         fav_to_delete = FavoriteRoute.query.filter_by(
+#             user_id=user_db_id,
+#             route_id=route_id_to_delete
+#         ).first()
+
+#         # If the favorite doesn't exist, return 404 Not Found
+#         if not fav_to_delete:
+#             return jsonify({"message": f"Favorite route '{route_id_to_delete}' not found"}), 404
+
+#         # Delete the record from the database session and commit
+#         db.session.delete(fav_to_delete)
+#         db.session.commit()
+
+#         print(f"Removed favorite route '{route_id_to_delete}' for user {user_db_id}")
+#         # Return success message
+#         return jsonify({"message": f"Route '{route_id_to_delete}' removed from favorites"}), 200 # 200 OK
+#     except Exception as e:
+#         db.session.rollback() # Rollback DB changes on error
+#         print(f"Error removing favorite route '{route_id_to_delete}' for user {user_db_id}: {e}")
+#         return jsonify({"message": "Error removing favorite"}), 500
+# ---------------------------------------
+

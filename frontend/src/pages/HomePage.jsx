@@ -1,56 +1,28 @@
-import React, {useState, useEffect} from 'react'
+import React, {useState, useEffect, useContext} from 'react'
 import NavBar from '../components/NavBar'
 import MapButtons from '../components/MapButtons'
-import MapView from '../components/MapView'
 import MapDisplay from '../components/MapDisplay'
-import SmallCard from '../components/SmallCard'
+import LongCard from '../components/LongCard'
+import ArrivalTimes from '../components/ArrivalTimes'
 import { useLocation } from 'react-router-dom';
+import { StationsContext } from '../context/StationsContext'
 
+const LINE_ICON_FILE = { "0": "placeholder",
+  "1": "1-digit", "2": "2-digit", "3": "3-digit", "4": "4-digit", "5": "5-digit", "6": "6-digit", "7": "7-digit",
+  "a": "a-letter", "b": "b-letter", "c": "c-letter", "d": "d-letter", "e": "e-letter", "f": "f-letter", "g": "g-letter",
+  "j": "j-letter", "l": "l-letter", "m": "m-letter", "n": "n-letter", "q": "q-letter", "r": "r-letter", "w": "w-letter", "z": "z-letter"
+};
 
 function HomePage({handleLogout}) {
+  const {stations, favoriteStations} = useContext(StationsContext)
+
   const [showFavorites, setShowFavorites] = useState(false)
   const [showDetails, setShowDetails] = useState(false)
 
-  const [subwayStatus, setSubwayStatus] = useState(null);
-  const [isLoading, setIsLoading] = useState(true); // For MTA data
-  const [error, setError] = useState(null);       // For MTA data
-  
   const allStationsSelect = useLocation();
   const {selectedStation} = allStationsSelect.state || {}
   
-  const [focusedStation, setFocusedStation] = useState({stop_name: "Times Square"})
-  const sampleFavorites = ["Times Square", "Jay St", "8th St NYU"]
-  
-  // --- useEffect Hook for Fetching MTA Data with Polling ---
-  useEffect(() => {
-    const fetchSubwayStatus = async () => {
-      setIsLoading(true);
-
-      try {
-        const response = await fetch('http://127.0.0.1:5000/api/subway/status');
-        if (!response.ok) {
-          const errorData = await response.text(); 
-          throw new Error(`HTTP error! status: ${response.status} ${response.statusText} - ${errorData}`);
-        }
-        const data = await response.json();
-        setSubwayStatus(data);
-        setError(null);
-      } catch (err) {
-        console.error("Fetch error:", err.message);
-        setError(err.message);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchSubwayStatus();
-    const intervalId = setInterval(fetchSubwayStatus, 60000); // Poll every 60 seconds
-
-    return () => {
-      clearInterval(intervalId);
-      console.log("Cleared subway status polling interval.");
-    };
-  }, []); 
+  const [focusedStation, setFocusedStation] = useState()
 
   useEffect(() => {
     if (allStationsSelect.state?.showDetails) {
@@ -58,17 +30,37 @@ function HomePage({handleLogout}) {
       setFocusedStation(selectedStation)
     }
   }, [allStationsSelect.state]);
-  
-  const renderedFavorites = sampleFavorites.map((station) => {
-    return(<SmallCard label={station} />)
-  })
-  
+
   const toggleFavorites = () => {
     setShowFavorites(!showFavorites)
   }
 
   const toggleDetails = () => {
     setShowDetails(!showDetails)
+  }
+
+  const renderedFavorites = favoriteStations.map((stop_id) => {
+    const station = stations?.find((s) => s.stop_id === stop_id);
+    if (!station) return null
+  
+    return (
+      <button key={station.stop_id} onClick={() => setFocusedStation(station)}>
+        <LongCard label={station.stop_name} station={station} style={"small"}/>
+      </button>
+    );
+  });
+
+  let renderedRoutes
+  if (focusedStation) {
+    renderedRoutes = focusedStation.routes.map((route) => {
+      const icon = LINE_ICON_FILE[route.toLowerCase()]
+      return(
+        <div 
+          style={{ backgroundImage: `url(/assets/subway_icons/${icon}.256x256.png)` }}
+          className="w-10 h-10 bg-cover">
+        </div>
+      )
+    })
   }
 
   return (
@@ -81,28 +73,52 @@ function HomePage({handleLogout}) {
       </button>
       
       {/* Favorites Side Bar */}
-      <div className = {`z-[3000] flex flex-col gap-5 absolute w-72 p-5 bg-white h-screen border-r-2"
+      <div className = {`z-[3000] flex flex-col gap-5 absolute w-64 p-5 bg-white h-screen border-r-2"
         transform transition-transform duration-300
         ${showFavorites ? 'translate-x-0' : '-translate-x-full'}`}
-        style = {{'padding-top': '70px'}}>
+        style = {{'paddingTop': '70px'}}>
         <p>Liked Stations</p>
         {renderedFavorites}
       </div>
 
       {/* Favorites More Details Bottom Bar */}
       <div className = {`z-[4000] shadow-inner rounded-t-3xl fixed w-full h-40 left-0 bottom-0 bg-slate-100 border-t-2
-        transform transition-transform duration-300 border-t
+        transform transition-transform duration-300 border-t flex p-5 pl-10 gap-10
         ${showDetails ? 'translate-y-0' : 'translate-y-full'}`}>
-        <p className = "m-5 ml-10">{focusedStation.stop_name}</p>
+        <div>
+          <div className = "">{focusedStation ? (<div>{focusedStation.stop_name}</div>) : "Select a station"}</div>
+          {focusedStation ? 
+          <div className = "flex gap-10 items-center mt-5">
+            <div className = "flex gap-2"> 
+              {renderedRoutes}
+            </div>
+          </div> : <div> </div>}
+        </div>
+          {focusedStation ?
+            <div>
+              <div className = "bg-white shadow rounded-lg p-2">
+                <p className = "underline">Arrival Times</p>
+                <div className = "font-semibold">
+                  <ArrivalTimes timestamps={focusedStation.next_arrival}/>
+                </div>
+              </div>
+              <div className = "m-2 absolute bottom-0 right-10 flex gap-2 text-gray-400 text-xs">
+                <p>stop_id: {focusedStation.stop_id}</p>
+                <p>lat: {focusedStation.stop_lat}</p>
+                <p>lon: {focusedStation.stop_lon}</p>
+              </div>
+            </div> 
+        : <div></div>}
+        
       </div>
 
       {/* Map with Buttons */}
       <div className="z-[2000] relative h-screen w-full">
         <div className={`absolute top-0 left-20 z-[1000] transform transition-transform duration-300
           ${showFavorites ? 'translate-x-52' : ''}`}>
-          <MapButtons label={focusedStation.stop_name} toggleDetails={toggleDetails}/>
+          <MapButtons label={focusedStation ? (<p>{focusedStation.stop_name}</p>) : "Select a station"} toggleDetails={toggleDetails} station={focusedStation} />
         </div>
-        <MapDisplay tripUpdates={subwayStatus?.trip_updates} selectedStation={focusedStation} />
+          <MapDisplay stations={stations} selectedStation={focusedStation} setSelectedStation={setFocusedStation}/>
       </div>
       
     </div>

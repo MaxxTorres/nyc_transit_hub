@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState, useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 
 // Mini component that uses useMap to fly to a location
@@ -22,35 +22,39 @@ function MapFlyToStation({ station }) {
   return null;
 }
 
-function MapDisplay({ tripUpdates, selectedStation }) {
+function MapDisplay({ stations, selectedStation, setSelectedStation}) {
   const position = [40.7128, -74.0060]; // NYC Coordinates
-  const zoomLevel = 12;
+  const zoomLevel = 13;
   const markerRefs = useRef({});
 
-  const updatesWithCoords = (tripUpdates || []).filter(update =>
-    update.first_future_stop &&
-    update.first_future_stop.latitude != null &&
-    update.first_future_stop.longitude != null
-  );
+  const renderedMarkers = useMemo(() => {
+    if (!stations) return null;
+  
+    return stations
+      .filter(station => station.next_arrival.length > 0)
+      .map((station) => (
+      <Marker
+        key={station.stop_id}
+        position={[station.stop_lat, station.stop_lon]}
+        ref={(ref) => {
+          if (ref) markerRefs.current[station.stop_id] = ref;
+        }}
+        eventHandlers={{
+          click: () => {
+            handleMarkerClick(station);
+          }
+        }}
+      >
+        <Popup>
+          {station.stop_name || `ID ${station.stop_id}`}<br />
+        </Popup>
+      </Marker>
+    ));
+  }, [stations]);
 
-  const renderedStopIds = new Set(
-    updatesWithCoords.map(update =>
-      update.first_future_stop.parent_station || update.first_future_stop.stop_id
-    )
-  );
-
-  useEffect(() => {
-    if (selectedStation) {
-      const selectedId = selectedStation.parent_station || selectedStation.stop_id;
-      const markerRef = markerRefs.current[selectedId];
-      if (markerRef && markerRef.openPopup) {
-        markerRef.openPopup();
-      } else {
-        console.log("Popup not found for stop:", selectedId);
-      }
-    }
-    console.log(selectedStation.stop_name, selectedStation.stop_lat, selectedStation.stop_lon)
-  }, [selectedStation]);
+  const handleMarkerClick = (station) => {
+    setSelectedStation(station)
+  }
 
   return (
     <MapContainer center={position} zoom={zoomLevel} scrollWheelZoom={true} className="h-screen w-full"
@@ -63,54 +67,11 @@ function MapDisplay({ tripUpdates, selectedStation }) {
       {/* Automatically fly to selected station */}
       {selectedStation && <MapFlyToStation station={selectedStation} />}
 
-      {/* Markers from trip updates */}
-      {updatesWithCoords.map(update => {
-        const stop = update.first_future_stop;
-        const stopId = stop.parent_station || stop.stop_id;
-        return (
-          <Marker
-            key={update.trip_id}
-            position={[stop.latitude, stop.longitude]}
-            ref={(ref) => {
-              if (ref) markerRefs.current[stopId] = ref;
-            }}
-          >
-            <Popup>
-              <b>Route: {update.route_id || 'N/A'}</b><br />
-              Stop: {stop.stop_name || `ID ${stop.stop_id}`}<br />
-              ETA: {new Date(stop.time * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}<br />
-              Trip ID: {update.trip_id}
-            </Popup>
-          </Marker>
-        );
-      })}
+      {/* Markers from trip stations */}
+      {renderedMarkers}
 
-      {/* Fallback marker if selected station not in tripUpdates */}
-      
-      {selectedStation &&
-        typeof selectedStation.stop_lat === 'number' &&
-        typeof selectedStation.stop_lon === 'number' && 
-        (
-        <Marker
-          position={[selectedStation.stop_lat, selectedStation.stop_lon]}
-          ref={(ref) => {
-            const selectedId = selectedStation.parent_station || selectedStation.stop_id;
-            if (ref) markerRefs.current[selectedId] = ref;
-          }}
-        >
-          <Popup>
-            <b>{selectedStation.stop_name}</b><br />
-            Lat: {selectedStation.stop_lat}<br />
-            Lon: {selectedStation.stop_lon}
-          </Popup>
-        </Marker>
-      )}
     </MapContainer>
   );
 }
-
-MapDisplay.defaultProps = {
-  tripUpdates: []
-};
 
 export default MapDisplay;

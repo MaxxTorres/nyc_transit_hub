@@ -1,16 +1,29 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useContext } from 'react';
 import { FaCaretDown } from 'react-icons/fa6';
+import { StationsContext } from '../context/StationsContext'
 
 const LINE_ICON_FILE = { "0": "placeholder",
   "1": "1-digit", "2": "2-digit", "3": "3-digit", "4": "4-digit", "5": "5-digit", "6": "6-digit", "7": "7-digit",
-  "A": "a-letter", "B": "b-letter", "C": "c-letter", "D": "d-letter", "E": "e-letter", "F": "f-letter", "G": "g-letter",
+  "a": "a-letter", "b": "b-letter", "c": "c-letter", "d": "d-letter", "e": "e-letter", "f": "f-letter", "g": "g-letter",
   "j": "j-letter", "l": "l-letter", "m": "m-letter", "n": "n-letter", "q": "q-letter", "r": "r-letter", "w": "w-letter", "z": "z-letter"
 };
 
-export default function Dropdown({ label = "Select", items = [], onSelect = "0" }) {
+export default function Dropdown({ label = "Select", items = [], onSelect}) {
+  const {setFeedId} = useContext(StationsContext)
   const [isOpen, setIsOpen] = useState(false);
-  const [icon, setIcon] = useState('placeholder');
+  const [icon, setIcon] = useState("1-digit");
   const dropdownRef = useRef(null);
+
+  const lineToFeedId = {
+      "1": "1", "2": "1", "3": "1", "4": "1", "5": "1", "6": "1",
+      "A": "a", "C": "a", "E": "a",
+      "L": "l",
+      "N": "n", "Q": "n", "R": "n", "W": "n",
+      "G": "g",
+      "J": "j", "Z": "j",
+      "7": "7",
+      "B": "b", "D": "b", "F": "b", "M": "b",
+    };
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -24,9 +37,10 @@ export default function Dropdown({ label = "Select", items = [], onSelect = "0" 
   }, []);
 
   const handleClick = (item) => {
-    onSelect(item);
+    setFeedId(lineToFeedId[item])
+    onSelect(item)
     setIsOpen(false);
-    const iconFound = LINE_ICON_FILE[item];
+    const iconFound = LINE_ICON_FILE[item.toLowerCase()];
 
     if (iconFound) {
       setIcon(iconFound);

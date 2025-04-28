@@ -109,9 +109,9 @@ def get_subway_status_updates(feed_id='1'):
     now including coordinates for the first future stop.
     """
     feed_url_map = {
-        '1': FEED_URL_1_6_S, '26': FEED_URL_A_C_E, '16': FEED_URL_L,
-        '21': FEED_URL_N_Q_R_W, '31': FEED_URL_G, '36': FEED_URL_J_Z,
-        '51': FEED_URL_7, 'si': FEED_URL_SIR, 'bdfm': FEED_URL_B_D_F_M
+        '1': FEED_URL_1_6_S, 'a': FEED_URL_A_C_E, 'l': FEED_URL_L,
+        'n': FEED_URL_N_Q_R_W, 'g': FEED_URL_G, 'j': FEED_URL_J_Z,
+        '7': FEED_URL_7, 'b': FEED_URL_B_D_F_M
     }
 
     feed_url = feed_url_map.get(str(feed_id).lower())
@@ -133,9 +133,11 @@ def get_subway_status_updates(feed_id='1'):
             route_id = entity.trip_update.trip.route_id
             first_future_stop_info = None # Renamed variable
 
+            future_stops = []  # new list to collect all upcoming stops
+
             for stop_time_update in entity.trip_update.stop_time_update:
                 event_time = None
-                stop_id = stop_time_update.stop_id # Get stop_id
+                stop_id = stop_time_update.stop_id
 
                 if stop_time_update.HasField('arrival') and stop_time_update.arrival.time > 0:
                     event_time = stop_time_update.arrival.time
@@ -143,20 +145,16 @@ def get_subway_status_updates(feed_id='1'):
                     event_time = stop_time_update.departure.time
 
                 if event_time and event_time > current_time:
-                    # --- Look up coordinates ---
-                    stop_details = STATION_DATA.get(stop_id) # Use .get() for safety
-                    # --------------------------
-                    first_future_stop_info = {
+                    stop_details = STATION_DATA.get(stop_id)
+                    stop_info = {
                         "stop_id": stop_id,
                         "time": event_time
                     }
-                    # --- Add coordinates if found ---
                     if stop_details:
-                        first_future_stop_info['stop_name'] = stop_details.get('name', 'Unknown Station')
-                        first_future_stop_info['latitude'] = stop_details.get('lat')
-                        first_future_stop_info['longitude'] = stop_details.get('lon')
-                    # -----------------------------
-                    break # Found the first future stop
+                        stop_info['stop_name'] = stop_details.get('name', 'Unknown Station')
+                        stop_info['latitude'] = stop_details.get('lat')
+                        stop_info['longitude'] = stop_details.get('lon')
+                    future_stops.append(stop_info)  # Append, don't break!
 
             update_info = {
                 "trip_id": entity.trip_update.trip.trip_id,
@@ -164,7 +162,7 @@ def get_subway_status_updates(feed_id='1'):
                 "start_time": entity.trip_update.trip.start_time,
                 "start_date": entity.trip_update.trip.start_date,
                 "direction": entity.trip_update.trip.direction_id if entity.trip_update.trip.HasField('direction_id') else None,
-                "first_future_stop": first_future_stop_info # Use the new variable name
+                "future_stops": future_stops # Use the new variable name
             }
             updates.append(update_info)
 
