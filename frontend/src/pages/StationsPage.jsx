@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useContext } from 'react'
 import NavBar from '../components/NavBar'
-import LongCard from '../components/LongCard'
+import StationCard from '../components/StationCard'
 import Dropdown from '../components/Dropdown'
 import AccessibilityInfo from '../components/AccessibilityInfo'; 
 import {NavLink} from 'react-router-dom'
@@ -62,7 +62,7 @@ function StationsPage({handleLogout}) {
               to="/home"
               state={{ showDetails: true, selectedStation: station }}
               key={station.stop_id}>
-              <LongCard label={station.stop_name} station={station} style={"large"}/>
+              <StationCard label={station.stop_name} station={station} style={"large"}/>
             </NavLink>
           );
       })

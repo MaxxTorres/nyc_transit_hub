@@ -1,5 +1,5 @@
 import React from 'react'
-import ArrivalTimes from '../components/ArrivalTimes'
+import ArrivalTimes from './ArrivalTimes'
 import { FaTriangleExclamation } from "react-icons/fa6";
 
 const LINE_ICON_FILE = { "0": "placeholder",
@@ -8,7 +8,7 @@ const LINE_ICON_FILE = { "0": "placeholder",
   "j": "j-letter", "l": "l-letter", "m": "m-letter", "n": "n-letter", "q": "q-letter", "r": "r-letter", "w": "w-letter", "z": "z-letter"
 };
 
-export default function LongCard(props) {
+export default function StationCard(props) {
   const {label="station", station, style} = props
   const min_time = Math.min(...station.next_arrival)
 

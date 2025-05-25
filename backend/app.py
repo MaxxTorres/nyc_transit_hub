@@ -1,17 +1,18 @@
-# backend/app.py
 import os
 import csv # Ensure csv is imported if used elsewhere, like in mta_api potentially
+import json
 from functools import wraps # Import wraps for decorator
 from flask import Flask, jsonify, request, g # Import request and g for decorator
 import pandas as pd
 from flask_cors import CORS
 from dotenv import load_dotenv
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy.dialects.sqlite import JSON
 import firebase_admin
 from firebase_admin import credentials, auth # Import auth for decorator
 
-# Import the mta_api module
 import mta_api
+import groq_api
 
 load_dotenv()
 
@@ -48,7 +49,18 @@ class User(db.Model):
 
     def __repr__(self):
         return f'<User {self.firebase_uid}>'
+class Station(db.Model):
+    __tablename__ = 'stations'
 
+    stop_id = db.Column(db.String, primary_key=True)
+    stop_name = db.Column(db.String, nullable=False)
+    stop_lat = db.Column(db.Float, nullable=True)
+    stop_lon = db.Column(db.Float, nullable=True)
+    routes = db.Column(JSON, nullable=True)
+    next_arrival = db.Column(JSON, nullable=True)
+
+    def __repr__(self):
+        return f"<Station {self.stop_name} ({self.stop_id})>"
 class FavoriteStation(db.Model):
     """Represents a user's favorited station."""
     id = db.Column(db.Integer, primary_key=True)
@@ -57,7 +69,39 @@ class FavoriteStation(db.Model):
 
     def __repr__(self):
         return f'<FavoriteStation {self.station_id} for User {self.user_id}>'
+
+@app.route("/debug/stations")
+def debug_stations():
+    stations = Station.query.all()
+    return jsonify([
+        {
+            "stop_id": s.stop_id,
+            "stop_name": s.stop_name,
+            "stop_lat": s.stop_lat,
+            "stop_lon": s.stop_lon,
+            "routes": s.routes,
+            "next_arrival": s.next_arrival
+        }
+        for s in stations
+    ])
 # ----------------------
+
+# --- Database Functions --- 
+def store_stations_in_db(stops_data):
+    Station.query.delete()
+
+    for stop in stops_data:
+        station = Station(
+            stop_id=stop['stop_id'],
+            stop_name=stop['stop_name'],
+            stop_lat=stop['stop_lat'],
+            stop_lon=stop['stop_lon'],
+            routes=stop['routes'],
+            next_arrival=stop['next_arrival']
+        )
+        db.session.add(station)
+
+    db.session.commit()
 
 # --- Firebase Admin SDK Initialization ---
 cred_path = os.getenv('FIREBASE_SERVICE_ACCOUNT_KEY')
@@ -137,6 +181,53 @@ def token_required(f):
     return decorated_function
 # -----------------------------
 
+# --- Groq API Endpoint ---
+def extract_location_keyword(location_name):
+    if not location_name:
+        return None
+    return location_name.strip().split()[0].lower()
+
+@app.route('/api/processChat', methods=['POST'])
+def processChat():
+    user_input = request.json.get("message")
+    response = groq_api.chatBot(user_input)
+
+    try:
+        processed_chat = json.loads(response)
+    except json.JSONDecodeError:
+        processed_chat = {"location": None, "train_line": None}
+
+    location = processed_chat.get("location", "")
+    location = extract_location_keyword(location)
+    train_line = processed_chat.get("train_line", "")
+
+    if not location and not train_line:
+        return jsonify([])
+
+    print(location, train_line)
+
+    # SQLAlchemy query
+    query = Station.query
+    if location:
+        query = query.filter(Station.stop_name.ilike(f"%{location}%"))
+    # if train_line:
+    #     query = query.filter(Station.routes.contains([train_line]))
+
+    results = query.all()
+
+    data = []
+    for station in results:
+        data.append({
+            "stop_id": station.stop_id,
+            "stop_name": station.stop_name,
+            "stop_lat": station.stop_lat,
+            "stop_lon": station.stop_lon,
+            "routes": station.routes,
+            "next_arrival": station.next_arrival
+        })
+
+    return jsonify(data)
+
 # --- MTA Data API Endpoint (Public) ---
 @app.route('/api/stations/', methods=['GET'])
 @app.route('/api/stations/<feed_id>', methods=['GET'])
@@ -203,6 +294,8 @@ def get_stations(feed_id="1"):
             'routes': row['routes'] if isinstance(row['routes'], list) else [],
             'next_arrival': next_arrival_times
         })
+
+    store_stations_in_db(stops_data)
 
     return jsonify(stops_data)
 

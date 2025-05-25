@@ -7,7 +7,6 @@ import StationsPage from './pages/StationsPage'
 import "./index.css";
 import { auth } from './firebaseConfig';
 import { onAuthStateChanged, signOut } from "firebase/auth";
-import { getIdToken } from "firebase/auth";
 
 function App() {
   const {setUser} = useContext(StationsContext)
@@ -25,7 +24,7 @@ function App() {
       setAuthLoading(false);
     });
 
-    // Redirect to home if logged in, otherwise go to login
+    // Redirect to home if logged in
     if (currentUser) {
      navigate("/home");
    } else {
@@ -38,7 +37,7 @@ function App() {
     };
   }, [currentUser]);
 
-  // --- Handle Logout Function ---
+  // --- Handle Logout ---
   const handleLogout = async () => {
     try {
       await signOut(auth);

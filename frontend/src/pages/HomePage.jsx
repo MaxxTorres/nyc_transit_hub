@@ -2,8 +2,9 @@ import React, {useState, useEffect, useContext} from 'react'
 import NavBar from '../components/NavBar'
 import MapButtons from '../components/MapButtons'
 import MapDisplay from '../components/MapDisplay'
-import LongCard from '../components/LongCard'
+import StationCard from '../components/StationCard'
 import ArrivalTimes from '../components/ArrivalTimes'
+import ChatBot from '../components/ChatBot'
 import { useLocation } from 'react-router-dom';
 import { StationsContext } from '../context/StationsContext'
 
@@ -39,13 +40,15 @@ function HomePage({handleLogout}) {
     setShowDetails(!showDetails)
   }
 
+  
+
   const renderedFavorites = favoriteStations.map((stop_id) => {
     const station = stations?.find((s) => s.stop_id === stop_id);
     if (!station) return null
   
     return (
       <button key={station.stop_id} onClick={() => setFocusedStation(station)}>
-        <LongCard label={station.stop_name} station={station} style={"small"}/>
+        <StationCard label={station.stop_name} station={station} style={"small"}/>
       </button>
     );
   });
@@ -66,6 +69,11 @@ function HomePage({handleLogout}) {
   return (
     <div>
       <NavBar handleLogout={handleLogout}/>
+
+      {/* Chat Box */}
+      <div className = "z-[3000] absolute right-5 bottom-5">
+        <ChatBot setFocusedStation={setFocusedStation}/>
+      </div>
 
       <button className = "z-[3000] absolute right-5 top-20 !h-16 map-button"
         onClick = {toggleFavorites}>
