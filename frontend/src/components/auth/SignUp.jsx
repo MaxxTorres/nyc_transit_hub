@@ -1,9 +1,8 @@
-// frontend/src/components/auth/SignUp.jsx
 import React, { useState } from 'react';
 import { createUserWithEmailAndPassword } from "firebase/auth";
-import { auth } from '../../firebaseConfig'; // Adjust path if needed
+import { auth } from '../../firebaseConfig';
 
-function SignUp({ switchToLogin }) { // Added prop to switch view
+function SignUp({ switchToLogin }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -28,11 +27,8 @@ function SignUp({ switchToLogin }) { // Added prop to switch view
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       // Signed up successfully
       console.log("User signed up successfully:", userCredential.user);
-      // You don't need to setCurrentUser here, onAuthStateChanged in App.jsx will handle it.
-      // Optionally switch to login view or show success message
     } catch (err) {
       console.error("Sign up error:", err.code, err.message);
-      // Provide user-friendly error messages
       if (err.code === 'auth/email-already-in-use') {
           setError('This email address is already registered.');
       } else if (err.code === 'auth/weak-password') {

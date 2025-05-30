@@ -17,29 +17,29 @@ function StationsPage({handleLogout}) {
   const [isAccessLoading, setIsAccessLoading] = useState(true);
   const [accessError, setAccessError] = useState(null); 
   const [selectedLine, setSelectedLine] = useState('1')
-
+  
+  // Fetch accessibility outage data from the backend API
   useEffect(() => {
     setFeedId('1')
     const fetchAccessData = async () => {
-      setIsAccessLoading(true); // Indicate loading accessibility data
-      setAccessError(null);     // Clear previous accessibility errors
+      setIsAccessLoading(true);
+      setAccessError(null);
       try {
-        // Fetch accessibility outage data from the backend API
         const response = await fetch('http://127.0.0.1:5000/api/accessibility/outages');
         if (!response.ok) {
           const errorData = await response.text(); // Try to get error text
           throw new Error(`HTTP error! status: ${response.status} ${response.statusText} - ${errorData}`);
         }
         const data = await response.json();
-        setAccessData(data); // Store the fetched outage data in state
+        setAccessData(data);
       } catch (err) {
         console.error("Fetch accessibility error:", err.message);
-        setAccessError(err.message); // Set accessibility error state
+        setAccessError(err.message);
       } finally {
-        setIsAccessLoading(false); // Finished fetching accessibility data
+        setIsAccessLoading(false);
       }
     };
-    fetchAccessData(); // Fetch accessibility data once when component mounts
+    fetchAccessData();
   }, []);
   // --------------------------------------------------
   

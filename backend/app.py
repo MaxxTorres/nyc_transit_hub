@@ -1,15 +1,15 @@
 import os
-import csv # Ensure csv is imported if used elsewhere, like in mta_api potentially
+import csv
 import json
-from functools import wraps # Import wraps for decorator
-from flask import Flask, jsonify, request, g # Import request and g for decorator
+from functools import wraps
+from flask import Flask, jsonify, request, g
 import pandas as pd
 from flask_cors import CORS
 from dotenv import load_dotenv
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.dialects.sqlite import JSON
 import firebase_admin
-from firebase_admin import credentials, auth # Import auth for decorator
+from firebase_admin import credentials, auth
 
 import mta_api
 import groq_api
@@ -127,7 +127,7 @@ else:
     print("FIREBASE_SERVICE_ACCOUNT_KEY environment variable not set. SDK not initialized.")
 # ---------------------------------------
 
-# --- Authentication Decorator (Corrected Logic) ---
+# --- Authentication Decorator ---
 def token_required(f):
     """Decorator to verify Firebase ID token in Authorization header."""
     @wraps(f)
@@ -228,7 +228,7 @@ def processChat():
 
     return jsonify(data)
 
-# --- MTA Data API Endpoint (Public) ---
+# --- MTA Data API Endpoint ---
 @app.route('/api/stations/', methods=['GET'])
 @app.route('/api/stations/<feed_id>', methods=['GET'])
 def get_stations(feed_id="1"):
@@ -310,7 +310,7 @@ def get_subway_status(feed_id='1'):
     return jsonify(status_data)
 # -----------------------------------
 
-# --- Accessibility API Endpoint (Public) ---
+# --- Accessibility API Endpoint ---
 @app.route('/api/accessibility/outages', methods=['GET'])
 def get_accessibility_outages():
     outage_data = mta_api.get_elevator_escalator_outages()

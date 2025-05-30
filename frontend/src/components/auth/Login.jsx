@@ -1,9 +1,8 @@
-// frontend/src/components/auth/Login.jsx
 import React, { useState } from 'react';
 import { signInWithEmailAndPassword } from "firebase/auth";
-import { auth } from '../../firebaseConfig'; // Adjust path if needed
+import { auth } from '../../firebaseConfig';
 
-function Login({ switchToSignUp }) { // Added prop to switch view
+function Login({ switchToSignUp }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -18,7 +17,6 @@ function Login({ switchToSignUp }) { // Added prop to switch view
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       // Signed in successfully
       console.log("User signed in successfully:", userCredential.user);
-      // onAuthStateChanged in App.jsx will handle setting the user state
     } catch (err) {
       console.error("Login error:", err.code, err.message);
        if (err.code === 'auth/invalid-credential' || err.code === 'auth/invalid-email' || err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found') {

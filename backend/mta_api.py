@@ -1,4 +1,3 @@
-# backend/mta_api.py
 import requests
 from google.transit import gtfs_realtime_pb2
 import time
@@ -6,7 +5,7 @@ import os
 import csv
 
 # --- Static Stop Data Loading ---
-STATION_DATA = {} # Module-level dictionary to hold stop data
+STATION_DATA = {}
 
 def load_stops_data(filepath='backend/stops.txt'):
     """Loads stop data (ID, Name, Lat, Lon) from GTFS stops.txt."""
@@ -131,9 +130,9 @@ def get_subway_status_updates(feed_id='1'):
     for entity in feed_message.entity:
         if entity.HasField('trip_update'):
             route_id = entity.trip_update.trip.route_id
-            first_future_stop_info = None # Renamed variable
+            first_future_stop_info = None
 
-            future_stops = []  # new list to collect all upcoming stops
+            future_stops = []  # list to collect all upcoming stops
 
             for stop_time_update in entity.trip_update.stop_time_update:
                 event_time = None
@@ -167,7 +166,6 @@ def get_subway_status_updates(feed_id='1'):
             updates.append(update_info)
 
         elif entity.HasField('alert'):
-            # ... (alert processing remains the same) ...
              alert_info = {
                  "header": entity.alert.header_text.translation[0].text if entity.alert.header_text.translation else "N/A",
                  "description": entity.alert.description_text.translation[0].text if entity.alert.description_text.translation else "N/A",
@@ -188,16 +186,7 @@ def get_subway_status_updates(feed_id='1'):
 def get_elevator_escalator_outages():
     """Fetches current elevator and escalator outages from the MTA API."""
     api_key = os.getenv('MTA_API_KEY')
-    # Note: Based on the URL structure (Dataservice/mtagtfsfeeds/...), this feed
-    # might *not* require an API key, similar to the GTFS-RT feeds.
-    # We'll try without the key first. If it fails with 401/403, we'll add the key logic back.
     headers = {}
-    # if api_key:
-    #     headers['x-api-key'] = api_key # Or appropriate header name
-    # else:
-    #     print("Warning: MTA_API_KEY not found, attempting access without key.")
-    #     # Decide if you want to return an error immediately or try without key
-    #     # return {"error": "Server configuration error: Missing MTA API Key"}
 
     try:
         print(f"Fetching Elevator/Escalator outages from: {ELEVATOR_ESCALATOR_OUTAGES_URL}")
@@ -205,8 +194,6 @@ def get_elevator_escalator_outages():
         response.raise_for_status()
 
         outage_data = response.json()
-        # Assuming the JSON structure is a list of outage objects directly
-        # Adjust parsing if it's nested under a key like 'entity'
         print(f"Successfully fetched {len(outage_data)} outage records.")
         return outage_data # Return the list directly
 
